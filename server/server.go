@@ -27,6 +27,7 @@ import (
 	"gocloud.dev/requestlog"
 	"gocloud.dev/server/driver"
 
+	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 )
 
@@ -47,6 +48,7 @@ type Server struct {
 	handler       http.Handler
 	healthHandler health.Handler
 	te            trace.Exporter
+	ve            view.Exporter
 	sampler       trace.Sampler
 	once          sync.Once
 	driver        driver.Server
@@ -64,6 +66,9 @@ type Options struct {
 	// TraceExporter exports sampled trace spans.
 	TraceExporter trace.Exporter
 
+	// ViewExporter exports stats
+	ViewExporter view.Exporter
+
 	// DefaultSamplingPolicy is a function that takes a
 	// trace.SamplingParameters struct and returns a true or false decision about
 	// whether it should be sampled and exported.
@@ -80,6 +85,7 @@ func New(h http.Handler, opts *Options) *Server {
 	if opts != nil {
 		srv.reqlog = opts.RequestLogger
 		srv.te = opts.TraceExporter
+		srv.ve = opts.ViewExporter
 		for _, c := range opts.HealthChecks {
 			srv.healthHandler.Add(c)
 		}
@@ -93,6 +99,13 @@ func (srv *Server) init() {
 	srv.once.Do(func() {
 		if srv.te != nil {
 			trace.RegisterExporter(srv.te)
+		}
+		if srv.ve != nil {
+			view.RegisterExporter(srv.ve)
+			// TODO: We may need to set reporting period atleast if its a stackdriver we are registering
+			// Stackdriver’s minimum stats reporting period must be >= 60 seconds. Find out why at this official Stackdriver advisory
+			// https://cloud.google.com/monitoring/custom-metrics/creating-metrics#writing-ts
+			// view.SetReportingPeriod(60 * time.Second)
 		}
 		if srv.sampler != nil {
 			trace.ApplyConfig(trace.Config{DefaultSampler: srv.sampler})
